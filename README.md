@@ -31,7 +31,18 @@ Handles OCPP 1.6 messages (BootNotification, StartTransaction, MeterValues, Stop
 
 ```bash
 chmod +x start-kafka.sh
-./start-kafka.sh        # downloads Kafka on first run (~70 MB), starts on localhost:9092
+./start-kafka.sh
+```
+
+Or if you already have Kafka installed:
+
+```bash
+# KRaft (Kafka 3.x, no ZooKeeper)
+bin/kafka-server-start.sh config/kraft/server.properties
+
+# OR classic ZooKeeper mode (Kafka 2.x)
+bin/zookeeper-server-start.sh config/zookeeper.properties &
+bin/kafka-server-start.sh config/server.properties
 ```
 
 Keep this terminal open.
