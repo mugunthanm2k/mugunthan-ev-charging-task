@@ -1,193 +1,275 @@
 # EV Charging Station Management System (CSMS)
 
-A simplified CSMS backend built with **Java 17** and **Spring Boot 2.7** for the Tucker Motors technical assessment.
+![Java](https://img.shields.io/badge/Java-17-blue)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-2.7.18-green)
+![Kafka](https://img.shields.io/badge/Apache%20Kafka-3.x-black)
+![License](https://img.shields.io/badge/License-MIT-yellow)
+![Build](https://img.shields.io/badge/Build-Maven-red)
+
+> **Tucker Motors Private Limited — Technical Assessment**  
+> Java 17 · Spring Boot 2.7 · Apache Kafka · H2 In-Memory DB · OCPP 1.6
 
 ---
 
-## Tech Stack
+A simplified CSMS (Charging Station Management System) backend built as a technical assessment for Tucker Motors Private Limited.
 
-| Layer | Technology |
-|-------|-----------|
-| Language | Java 17 |
-| Framework | Spring Boot 2.7.18 |
-| Messaging | Apache Kafka |
-| Database | H2 (in-memory) |
-| API Docs | SpringDoc / Swagger UI |
-| Build | Maven |
-| Tests | JUnit 5, Mockito, MockMvc, `@EmbeddedKafka` |
+Handles OCPP 1.6 messages (BootNotification, StartTransaction, MeterValues, StopTransaction) via REST endpoints, publishes all events to Apache Kafka, computes per-session energy and power analytics, and exposes query APIs for station data and charging history.
 
 ---
 
-## Prerequisites
+## Quick Start
 
-- **Java 17+** — `java -version`
-- **Maven 3.6+** — `mvn -version`
-- **Kafka running on `localhost:9092`** (see Quick Start below)
+### Prerequisites
 
-> Tests run fully self-contained using `@EmbeddedKafka` — no Kafka needed for `mvn test`.
+| Tool  | Version | Check |
+|-------|---------|-------|
+| Java  | 17+     | `java -version` |
+| Maven | 3.6+    | `mvn -version` |
+| Kafka | 3.x     | Must run on `localhost:9092` |
 
----
-
-## Quick Start (no Docker)
-
-### Terminal 1 — Start Kafka
-
-The included script downloads Kafka automatically and starts it in KRaft mode (no ZooKeeper):
+### 1 — Start Kafka *(no Docker needed)*
 
 ```bash
 chmod +x start-kafka.sh
-./start-kafka.sh
+./start-kafka.sh        # downloads Kafka on first run (~70 MB), starts on localhost:9092
 ```
 
-Or if you already have Kafka installed:
+Keep this terminal open.
 
-```bash
-# KRaft (Kafka 3.x, no ZooKeeper)
-bin/kafka-server-start.sh config/kraft/server.properties
-
-# OR classic ZooKeeper mode (Kafka 2.x)
-bin/zookeeper-server-start.sh config/zookeeper.properties &
-bin/kafka-server-start.sh config/server.properties
-```
-
-### Terminal 2 — Start the application
+### 2 — Start the App
 
 ```bash
 mvn clean spring-boot:run
 ```
 
-Or build and run the JAR:
+Ready when you see: **`Started CsmsApplication in X.XXX seconds`**
+
+### 3 — Run Tests *(no Kafka needed)*
 
 ```bash
-mvn clean package -DskipTests
-java -jar target/ev-charging-csms-1.0.0.jar
+mvn test     # @EmbeddedKafka starts an in-process broker automatically
 ```
-
-The app starts on **http://localhost:8080**.
-
-### Run tests (no Kafka needed)
-
-```bash
-mvn test
-```
-
-Tests use `@EmbeddedKafka` — a real in-process broker starts automatically for the test suite.
 
 ---
 
-## API Documentation
+## Developer Tools
 
-| URL | Description |
-|-----|-------------|
-| http://localhost:8080/swagger-ui.html | Interactive Swagger UI |
-| http://localhost:8080/api-docs | Raw OpenAPI JSON |
-| http://localhost:8080/h2-console | H2 DB console (JDBC: `jdbc:h2:mem:csmsdb`) |
-
----
-
-## API Endpoints
-
-### OCPP Message Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/ocpp/boot-notification` | Station registers itself |
-| POST | `/api/ocpp/start-transaction` | Charging session begins |
-| POST | `/api/ocpp/meter-values` | Periodic energy readings |
-| POST | `/api/ocpp/stop-transaction` | Charging session ends |
-
-### Query Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/stations` | All registered charging stations |
-| GET | `/api/stations/transactions/active` | All currently active sessions |
-| GET | `/api/stations/{stationId}/history` | Session history for a station |
-| GET | `/api/stations/energy/last24hours` | Total energy consumed (last 24 hrs) |
+| URL | Purpose |
+|-----|---------|
+| `http://localhost:8080/swagger-ui.html` | Interactive Swagger UI |
+| `http://localhost:8080/api-docs`        | OpenAPI 3.0 JSON |
+| `http://localhost:8080/h2-console`      | H2 DB console — JDBC: `jdbc:h2:mem:csmsdb` / user: `sa` |
 
 ---
 
-## Sample curl Commands
+## Postman Testing
 
-### 1. Register a station (BootNotification)
+### Import the Collection
 
-```bash
-curl -s -X POST http://localhost:8080/api/ocpp/boot-notification \
-  -H "Content-Type: application/json" \
-  -d '{
-    "stationId": "EVSE-001",
-    "timestamp": "2024-01-15T10:30:00Z",
-    "payload": {
-      "chargePointVendor": "ChargePoint",
-      "chargePointModel": "CP-2000",
-      "firmwareVersion": "2.5.1"
-    }
-  }'
+1. Open **Postman**
+2. Click **Import** → select `CSMS_Postman_Collection.json`
+3. Done — 14 requests across 4 folders, all pre-configured
+
+### Collection Variables
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `baseUrl` | `http://localhost:8080` | Change if different port |
+| `stationId` | `EVSE-001` | Used across all requests |
+| `transactionId` | *(auto-filled)* | Set automatically by Start Transaction |
+
+### Folder Structure
+
+```
+📁 EV Charging Station Management System (CSMS)
+├── 📂 OCPP Messages          ← run these in order
+│   ├── 1. Boot Notification
+│   ├── 2. Start Transaction  ← auto-saves transactionId to variable
+│   ├── 3. Meter Values
+│   ├── 3b. Meter Values (2nd reading)
+│   └── 4. Stop Transaction
+│
+├── 📂 Query API
+│   ├── Get All Stations
+│   ├── Get Active Transactions
+│   ├── Get Charging History
+│   └── Get Energy Report (Last 24 Hours)
+│
+├── 📂 Error Cases            ← expect 4xx responses, tests still pass
+│   ├── Start Transaction — Unregistered Station  → 404
+│   ├── Stop Transaction  — Unknown Transaction   → 404
+│   └── Boot Notification — Missing stationId     → 400
+│
+└── 📂 Multi-Station Demo
+    ├── Register Station 2 (EVSE-002 / ABB)
+    ├── Start Transaction on Station 2
+    └── Get Active Transactions (shows both)
 ```
 
-**Response:**
+---
+
+## Full Session Walkthrough
+
+Send requests in order. `{{transactionId}}` is auto-filled after Step 2.
+
+### Step 1 — Boot Notification
+
+```
+POST  http://localhost:8080/api/ocpp/boot-notification
+Content-Type: application/json
+```
+
 ```json
-{ "status": "Accepted", "currentTime": "2024-01-15T10:30:01Z", "interval": 300 }
+{
+  "stationId": "EVSE-001",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "payload": {
+    "chargePointVendor": "ChargePoint",
+    "chargePointModel":  "CP-2000",
+    "firmwareVersion":   "2.5.1"
+  }
+}
 ```
 
-### 2. Start a charging session
-
-```bash
-curl -s -X POST http://localhost:8080/api/ocpp/start-transaction \
-  -H "Content-Type: application/json" \
-  -d '{
-    "stationId": "EVSE-001",
-    "timestamp": "2024-01-15T10:31:00Z",
-    "payload": { "idTag": "USER-42", "meterStart": 0.0 }
-  }'
-```
-
-**Response:**
+**Response `200 OK`:**
 ```json
-{ "transactionId": "TXN-A1B2C3D4", "idTagStatus": "Accepted" }
+{
+  "status":      "Accepted",
+  "currentTime": "2026-03-18T06:10:42.260Z",
+  "interval":    300
+}
 ```
 
-### 3. Send energy readings
+---
 
-```bash
-curl -s -X POST http://localhost:8080/api/ocpp/meter-values \
-  -H "Content-Type: application/json" \
-  -d '{
-    "stationId": "EVSE-001",
-    "transactionId": "TXN-A1B2C3D4",
-    "timestamp": "2024-01-15T10:35:00Z",
-    "payload": { "energy": 15.5, "power": 7.2, "voltage": 240, "current": 30 }
-  }'
+### Step 2 — Start Transaction
+
+```
+POST  http://localhost:8080/api/ocpp/start-transaction
 ```
 
-### 4. Stop the session
-
-```bash
-curl -s -X POST http://localhost:8080/api/ocpp/stop-transaction \
-  -H "Content-Type: application/json" \
-  -d '{
-    "stationId": "EVSE-001",
-    "transactionId": "TXN-A1B2C3D4",
-    "timestamp": "2024-01-15T11:01:00Z",
-    "payload": { "meterStop": 45.2, "reason": "Local" }
-  }'
+```json
+{
+  "stationId": "EVSE-001",
+  "timestamp": "2024-01-15T10:31:00Z",
+  "payload": {
+    "idTag":      "USER-42",
+    "meterStart": 0.0
+  }
+}
 ```
 
-### 5. Query APIs
-
-```bash
-# All stations
-curl -s http://localhost:8080/api/stations
-
-# Active sessions
-curl -s http://localhost:8080/api/stations/transactions/active
-
-# History for a station
-curl -s http://localhost:8080/api/stations/EVSE-001/history
-
-# Energy report
-curl -s http://localhost:8080/api/stations/energy/last24hours
+**Response `200 OK`:**
+```json
+{
+  "transactionId": "TXN-A1B2C3D4",
+  "idTagStatus":   "Accepted"
+}
 ```
+
+> ✅ The Postman test script saves `transactionId` to `{{transactionId}}` automatically
+
+---
+
+### Step 3 — Meter Values
+
+```
+POST  http://localhost:8080/api/ocpp/meter-values
+```
+
+```json
+{
+  "stationId":     "EVSE-001",
+  "transactionId": "TXN-A1B2C3D4",
+  "timestamp":     "2024-01-15T10:35:00Z",
+  "payload": {
+    "energy":  15.5,
+    "power":    7.2,
+    "voltage": 240,
+    "current":  30
+  }
+}
+```
+
+---
+
+### Step 4 — Stop Transaction
+
+```
+POST  http://localhost:8080/api/ocpp/stop-transaction
+```
+
+```json
+{
+  "stationId":     "EVSE-001",
+  "transactionId": "TXN-A1B2C3D4",
+  "timestamp":     "2024-01-15T11:01:00Z",
+  "payload": {
+    "meterStop": 45.2,
+    "reason":    "Local"
+  }
+}
+```
+
+> Total energy = meterStop(45.2) − meterStart(0.0) = **45.2 kWh**
+
+---
+
+## Query API
+
+```
+GET  /api/stations                           → all registered stations
+GET  /api/stations/transactions/active       → currently active sessions
+GET  /api/stations/EVSE-001/history          → full session history
+GET  /api/stations/energy/last24hours        → energy report
+```
+
+**Sample history response:**
+```json
+[
+  {
+    "transactionId":   "TXN-A1B2C3D4",
+    "stationId":       "EVSE-001",
+    "status":          "COMPLETED",
+    "startTime":       "2024-01-15T10:31:00Z",
+    "stopTime":        "2024-01-15T11:01:00Z",
+    "totalEnergyKwh":  45.2,
+    "durationSeconds": 1800,
+    "averagePowerKw":  7.2
+  }
+]
+```
+
+---
+
+## Error Responses
+
+All errors return a consistent JSON body:
+
+```json
+{
+  "status":    404,
+  "message":   "Station not registered: EVSE-999",
+  "timestamp": "2026-03-18T06:10:42.260Z"
+}
+```
+
+| Status | Cause |
+|--------|-------|
+| `400`  | Missing required field or validation failure |
+| `404`  | Station or transaction not found |
+| `500`  | Unexpected server error |
+
+---
+
+## Run All Tests at Once (Collection Runner)
+
+1. Click **▶ Runner** in Postman bottom-right
+2. Select **EV Charging Station Management System (CSMS)**
+3. Keep default order (OCPP Messages runs first)
+4. Click **Run CSMS**
+
+**Expected:** 14 requests · ~25 assertions · all green ✓
 
 ---
 
@@ -197,59 +279,104 @@ curl -s http://localhost:8080/api/stations/energy/last24hours
 HTTP Request
      │
      ▼
-┌─────────────────────┐
-│  OcppController     │  POST /api/ocpp/*
-│  StationController  │  GET  /api/stations/*
-└────────┬────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│  OcppMessageService │  Validates, persists, publishes to Kafka
-│  StationQueryService│  Read-side queries
-└────────┬────────────┘
-         │
-    ┌────┴────────────┐
-    ▼                 ▼
-┌────────┐    ┌───────────────┐
-│  H2 DB │    │  Kafka Broker │  localhost:9092
-│  (JPA) │    │  4 topics     │
-└────────┘    └──────┬────────┘
-                     │
-                     ▼
-             ┌───────────────┐
-             │MeterValues    │  Consumes meter-values topic,
-             │Consumer       │  accumulates energy/power stats
-             └───────────────┘
+┌──────────────────────┐
+│  OcppController      │  POST /api/ocpp/*
+│  StationController   │  GET  /api/stations/*
+└─────────┬────────────┘
+          │
+          ▼
+┌──────────────────────┐
+│  OcppMessageService  │  validates → persists → publishes
+│  StationQueryService │  read-side queries
+└──────┬───────────────┘
+       │
+  ┌────┴────────────┐
+  ▼                 ▼
+┌──────┐     ┌─────────────────┐
+│  H2  │     │  Kafka Broker   │  localhost:9092
+│  JPA │     │  4 topics       │
+└──────┘     └────────┬────────┘
+                      │
+             ┌────────▼────────┐
+             │ MeterValues     │  → totalEnergyKwh
+             │ Consumer        │  → avgPowerKw
+             └─────────────────┘  → durationSeconds
 ```
 
 ### Kafka Topics
 
-| Topic | Produced when |
-|-------|--------------|
-| `ocpp.boot-notification` | Station sends BootNotification |
-| `ocpp.start-transaction` | Charging session starts |
-| `ocpp.meter-values` | Energy readings received |
-| `ocpp.stop-transaction` | Charging session ends |
-
-The `MeterValuesConsumer` listens on `ocpp.meter-values` and computes per-transaction: total energy consumed (kWh), charging duration (seconds), and average power (kW).
+| Topic | Published When |
+|-------|----------------|
+| `ocpp.boot-notification` | BootNotification received |
+| `ocpp.start-transaction` | Session starts |
+| `ocpp.meter-values`      | Energy reading received |
+| `ocpp.stop-transaction`  | Session ends |
 
 ---
 
-## Design Decisions & Assumptions
+## Project Structure
 
-1. **REST instead of WebSocket for OCPP** — the task specified REST API assessment. In production, OCPP-J uses WebSocket; the message structure is intentionally OCPP-compatible so it can be adapted.
-2. **H2 in-memory database** — suitable for local demonstration; swap for PostgreSQL in production by changing `application.properties`.
-3. **Station must register before StartTransaction** — enforced with a 404, mirroring real OCPP behaviour.
-4. **MeterValues energy field** — treated as cumulative energy delivered so far in the transaction (kWh). The `meterStop - meterStart` delta is used for the definitive total.
-5. **Tests are fully self-contained** — `@EmbeddedKafka` starts a real broker inside the JVM; no external Kafka needed for `mvn test`.
+```
+ev-charging-csms/
+├── pom.xml
+├── README.md
+├── start-kafka.sh
+├── CSMS_Postman_Collection.json
+└── src/
+    ├── main/java/com/tucker/csms/
+    │   ├── CsmsApplication.java
+    │   ├── config/
+    │   │   ├── JacksonConfig.java        ← ObjectMapper + JavaTimeModule
+    │   │   ├── KafkaTopicConfig.java     ← auto-creates 4 topics
+    │   │   └── OpenApiConfig.java        ← Swagger metadata
+    │   ├── controller/
+    │   │   ├── OcppController.java       ← POST /api/ocpp/*
+    │   │   ├── StationController.java    ← GET  /api/stations/*
+    │   │   └── GlobalExceptionHandler.java
+    │   ├── dto/OcppDtos.java             ← all request/response DTOs
+    │   ├── kafka/
+    │   │   ├── OcppKafkaProducer.java    ← publishes to 4 topics
+    │   │   └── MeterValuesConsumer.java  ← accumulates analytics
+    │   ├── model/
+    │   │   ├── ChargingStation.java
+    │   │   ├── Transaction.java
+    │   │   └── MeterValue.java
+    │   ├── repository/
+    │   │   ├── ChargingStationRepository.java
+    │   │   ├── TransactionRepository.java
+    │   │   └── MeterValueRepository.java
+    │   └── service/
+    │       ├── OcppMessageService.java   ← handles all 4 OCPP messages
+    │       └── StationQueryService.java  ← read-side queries
+    └── test/java/com/tucker/csms/
+        ├── OcppMessageServiceTest.java   ← 7 unit tests (Mockito)
+        └── CsmsIntegrationTest.java      ← 3 integration tests (@EmbeddedKafka)
+```
 
 ---
 
-## Potential Improvements
+## Design Decisions
 
-- Add WebSocket support for real OCPP-J 1.6 / 2.0.1 compliance
-- Persist Kafka consumer offsets for replay resilience
-- Add JWT authentication to REST endpoints
-- Replace H2 with PostgreSQL for production
-- Add Micrometer metrics + Prometheus scraping
-- Rate-limiting per station to prevent message floods
+| Decision | Rationale |
+|----------|-----------|
+| REST over WebSocket | Task specified REST; message structure is OCPP-compatible for WebSocket adaptation |
+| H2 in-memory DB | Ephemeral for assessment; swap to PostgreSQL via `pom.xml` + `application.properties` |
+| Station must BootNotify first | Mirrors real OCPP registration flow; returns 404 otherwise |
+| Kafka analytics in-memory | `MeterValuesConsumer` uses `ConcurrentHashMap` for fast read without extra DB queries |
+| Tests self-contained | `@EmbeddedKafka` starts real in-process broker; `mvn test` needs no external Kafka |
+
+---
+
+## Troubleshooting
+
+**`transactionId` empty — Meter Values returns 400**
+→ Run Boot Notification then Start Transaction first.
+
+**Connection refused**
+→ Run `mvn spring-boot:run` and wait for the startup message.
+
+**Kafka errors in logs**
+→ Run `./start-kafka.sh` first, then restart the app.
+
+**Data gone after restart**
+→ H2 is in-memory. Re-run Boot Notification and Start Transaction.
