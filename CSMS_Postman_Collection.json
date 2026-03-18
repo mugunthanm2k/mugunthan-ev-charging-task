@@ -1,0 +1,430 @@
+{
+  "info": {
+    "name": "EV Charging Station Management System (CSMS)",
+    "description": "Complete Postman collection for the Tucker Motors CSMS backend.\n\nRun requests in order:\n1. Boot Notification (registers the station)\n2. Start Transaction (returns a transactionId — copy it into the collection variable)\n3. Meter Values\n4. Stop Transaction\n5. Query APIs",
+    "_postman_id": "csms-tucker-motors-v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",       "value": "http://localhost:8080",  "type": "string" },
+    { "key": "stationId",     "value": "EVSE-001",               "type": "string" },
+    { "key": "transactionId", "value": "",                        "type": "string",
+      "description": "Auto-filled after running Start Transaction" }
+  ],
+  "item": [
+    {
+      "name": "OCPP Messages",
+      "description": "Simulated OCPP 1.6 messages from a charging station to the CSMS",
+      "item": [
+        {
+          "name": "1. Boot Notification",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response status is Accepted', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.status).to.eql('Accepted');",
+                  "});",
+                  "pm.test('currentTime is present', () => {",
+                  "    pm.expect(pm.response.json().currentTime).to.be.a('string');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/ocpp/boot-notification", "host": ["{{baseUrl}}"], "path": ["api","ocpp","boot-notification"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": \"{{stationId}}\",\n  \"timestamp\": \"2024-01-15T10:30:00Z\",\n  \"payload\": {\n    \"chargePointVendor\": \"ChargePoint\",\n    \"chargePointModel\": \"CP-2000\",\n    \"firmwareVersion\": \"2.5.1\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Registers the charging station with the CSMS.\n\nMust be called before StartTransaction — the system enforces this (returns 404 otherwise).\n\n**Expected response:**\n```json\n{\n  \"status\": \"Accepted\",\n  \"currentTime\": \"...\",\n  \"interval\": 300\n}\n```"
+          }
+        },
+        {
+          "name": "2. Start Transaction",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('transactionId starts with TXN-', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.transactionId).to.match(/^TXN-/);",
+                  "});",
+                  "pm.test('idTagStatus is Accepted', () => {",
+                  "    pm.expect(pm.response.json().idTagStatus).to.eql('Accepted');",
+                  "});",
+                  "// Auto-save transactionId to collection variable",
+                  "const txnId = pm.response.json().transactionId;",
+                  "pm.collectionVariables.set('transactionId', txnId);",
+                  "console.log('transactionId saved:', txnId);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/ocpp/start-transaction", "host": ["{{baseUrl}}"], "path": ["api","ocpp","start-transaction"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": \"{{stationId}}\",\n  \"timestamp\": \"2024-01-15T10:31:00Z\",\n  \"payload\": {\n    \"idTag\": \"USER-42\",\n    \"meterStart\": 0.0\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Starts a charging session.\n\nThe **transactionId** is automatically saved to the `transactionId` collection variable by the test script — subsequent requests use it automatically.\n\n**Expected response:**\n```json\n{\n  \"transactionId\": \"TXN-XXXXXXXX\",\n  \"idTagStatus\": \"Accepted\"\n}\n```"
+          }
+        },
+        {
+          "name": "3. Meter Values",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response status is Accepted', () => {",
+                  "    pm.expect(pm.response.json().status).to.eql('Accepted');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/ocpp/meter-values", "host": ["{{baseUrl}}"], "path": ["api","ocpp","meter-values"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": \"{{stationId}}\",\n  \"transactionId\": \"{{transactionId}}\",\n  \"timestamp\": \"2024-01-15T10:35:00Z\",\n  \"payload\": {\n    \"energy\": 15.5,\n    \"power\": 7.2,\n    \"voltage\": 240,\n    \"current\": 30\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Sends periodic energy and power readings.\n\nThe `transactionId` is automatically populated from the collection variable set by Start Transaction.\n\nThis is also consumed by the Kafka `MeterValuesConsumer` which accumulates:\n- Total energy (kWh)\n- Average power (kW)\n- Charging duration (seconds)"
+          }
+        },
+        {
+          "name": "3b. Meter Values (2nd reading)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/ocpp/meter-values", "host": ["{{baseUrl}}"], "path": ["api","ocpp","meter-values"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": \"{{stationId}}\",\n  \"transactionId\": \"{{transactionId}}\",\n  \"timestamp\": \"2024-01-15T10:50:00Z\",\n  \"payload\": {\n    \"energy\": 32.1,\n    \"power\": 7.4,\n    \"voltage\": 239,\n    \"current\": 31\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "A second meter values reading to simulate ongoing charging. Run multiple times to see energy accumulation."
+          }
+        },
+        {
+          "name": "4. Stop Transaction",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response status is Accepted', () => {",
+                  "    pm.expect(pm.response.json().status).to.eql('Accepted');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/ocpp/stop-transaction", "host": ["{{baseUrl}}"], "path": ["api","ocpp","stop-transaction"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": \"{{stationId}}\",\n  \"transactionId\": \"{{transactionId}}\",\n  \"timestamp\": \"2024-01-15T11:01:00Z\",\n  \"payload\": {\n    \"meterStop\": 45.2,\n    \"reason\": \"Local\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Ends the charging session.\n\nTotal energy consumed = `meterStop - meterStart` = 45.2 - 0.0 = **45.2 kWh**\n\nTransaction status changes from `ACTIVE` → `COMPLETED`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Query API",
+      "description": "Read-only endpoints to inspect station data, transactions, and energy reports",
+      "item": [
+        {
+          "name": "Get All Stations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is an array', () => {",
+                  "    pm.expect(pm.response.json()).to.be.an('array');",
+                  "});",
+                  "pm.test('Station EVSE-001 is registered', () => {",
+                  "    const stations = pm.response.json();",
+                  "    const found = stations.some(s => s.stationId === pm.collectionVariables.get('stationId'));",
+                  "    pm.expect(found).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/stations", "host": ["{{baseUrl}}"], "path": ["api","stations"] },
+            "description": "Returns all charging stations that have sent a BootNotification."
+          }
+        },
+        {
+          "name": "Get Active Transactions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is an array', () => {",
+                  "    pm.expect(pm.response.json()).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/stations/transactions/active", "host": ["{{baseUrl}}"], "path": ["api","stations","transactions","active"] },
+            "description": "Returns all transactions with status=ACTIVE.\n\nRun this after Start Transaction (shows 1 result) and again after Stop Transaction (shows 0 results)."
+          }
+        },
+        {
+          "name": "Get Charging History",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is an array', () => {",
+                  "    pm.expect(pm.response.json()).to.be.an('array');",
+                  "});",
+                  "if (pm.response.json().length > 0) {",
+                  "    pm.test('First entry has transactionId', () => {",
+                  "        pm.expect(pm.response.json()[0].transactionId).to.be.a('string');",
+                  "    });",
+                  "    pm.test('totalEnergyKwh is a number', () => {",
+                  "        const energy = pm.response.json()[0].totalEnergyKwh;",
+                  "        if (energy !== null) pm.expect(energy).to.be.a('number');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/stations/{{stationId}}/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","stations","{{stationId}}","history"]
+            },
+            "description": "Returns all transactions for the station, newest first.\n\nEach entry includes:\n- `transactionId`\n- `status` (ACTIVE / COMPLETED)\n- `startTime` / `stopTime`\n- `totalEnergyKwh` (meterStop - meterStart)\n- `durationSeconds`\n- `averagePowerKw` (from Kafka consumer)"
+          }
+        },
+        {
+          "name": "Get Energy Report (Last 24 Hours)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('totalEnergyKwh is a number', () => {",
+                  "    pm.expect(pm.response.json().totalEnergyKwh).to.be.a('number');",
+                  "});",
+                  "pm.test('period is Last 24 hours', () => {",
+                  "    pm.expect(pm.response.json().period).to.eql('Last 24 hours');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/stations/energy/last24hours", "host": ["{{baseUrl}}"], "path": ["api","stations","energy","last24hours"] },
+            "description": "Returns the total energy consumed across ALL stations in the last 24 hours.\n\n**Expected response:**\n```json\n{\n  \"totalEnergyKwh\": 45.2,\n  \"period\": \"Last 24 hours\"\n}\n```"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error Cases",
+      "description": "Verify error handling — these requests are expected to fail with 4xx responses",
+      "item": [
+        {
+          "name": "Start Transaction — Unregistered Station (expect 404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Error message mentions station', () => {",
+                  "    pm.expect(pm.response.json().message).to.include('Station not registered');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/ocpp/start-transaction", "host": ["{{baseUrl}}"], "path": ["api","ocpp","start-transaction"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": \"EVSE-DOES-NOT-EXIST\",\n  \"timestamp\": \"2024-01-15T10:31:00Z\",\n  \"payload\": {\n    \"idTag\": \"USER-42\",\n    \"meterStart\": 0.0\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Intentionally uses a stationId that hasn't sent a BootNotification.\n\nExpected: **404 Not Found** with message `Station not registered: EVSE-DOES-NOT-EXIST`"
+          }
+        },
+        {
+          "name": "Stop Transaction — Unknown Transaction (expect 404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Error message mentions transaction', () => {",
+                  "    pm.expect(pm.response.json().message).to.include('Transaction not found');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/ocpp/stop-transaction", "host": ["{{baseUrl}}"], "path": ["api","ocpp","stop-transaction"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": \"{{stationId}}\",\n  \"transactionId\": \"TXN-INVALID\",\n  \"timestamp\": \"2024-01-15T11:01:00Z\",\n  \"payload\": {\n    \"meterStop\": 45.2,\n    \"reason\": \"Local\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Intentionally uses a fake transactionId.\n\nExpected: **404 Not Found** with message `Transaction not found: TXN-INVALID`"
+          }
+        },
+        {
+          "name": "Boot Notification — Missing stationId (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Validation error message present', () => {",
+                  "    pm.expect(pm.response.json().message).to.include('Validation failed');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/ocpp/boot-notification", "host": ["{{baseUrl}}"], "path": ["api","ocpp","boot-notification"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"timestamp\": \"2024-01-15T10:30:00Z\",\n  \"payload\": {\n    \"chargePointVendor\": \"ChargePoint\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Missing the required `stationId` field.\n\nExpected: **400 Bad Request** with validation error message."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Second Station (Multi-Station Demo)",
+      "description": "Demonstrates the system handling multiple stations simultaneously",
+      "item": [
+        {
+          "name": "Register Station 2",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/ocpp/boot-notification", "host": ["{{baseUrl}}"], "path": ["api","ocpp","boot-notification"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": \"EVSE-002\",\n  \"timestamp\": \"2024-01-15T10:30:00Z\",\n  \"payload\": {\n    \"chargePointVendor\": \"ABB\",\n    \"chargePointModel\":  \"Terra-54\",\n    \"firmwareVersion\":   \"3.1.0\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Start Transaction on Station 2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const txnId = pm.response.json().transactionId;",
+                  "pm.collectionVariables.set('transactionId2', txnId);",
+                  "console.log('Station 2 transactionId:', txnId);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/ocpp/start-transaction", "host": ["{{baseUrl}}"], "path": ["api","ocpp","start-transaction"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": \"EVSE-002\",\n  \"timestamp\": \"2024-01-15T10:45:00Z\",\n  \"payload\": {\n    \"idTag\": \"USER-99\",\n    \"meterStart\": 0.0\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Get Active Transactions (should show 2)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/stations/transactions/active", "host": ["{{baseUrl}}"], "path": ["api","stations","transactions","active"] },
+            "description": "After running both Start Transaction requests, this should return 2 active sessions."
+          }
+        }
+      ]
+    }
+  ]
+}
